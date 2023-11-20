@@ -52,14 +52,12 @@ Function Get-UpdateDescription {
 
 #region Variables
 # Windows Updates search object and results
-$updateSession  = New-Object -ComObject Microsoft.Update.Session
-$updateSearcher = $updateSession.CreateUpdateSearcher()
-$criteria       = "IsInstalled=0 and RebootRequired=0 and Type='Software'"
-$results        = $updateSearcher.search($criteria)
-# Windows Updates collection object
+$updateSession     = New-Object -ComObject Microsoft.Update.Session
+$updateSearcher    = $updateSession.CreateUpdateSearcher()
+$criteria          = "IsInstalled=0 and RebootRequired=0 and Type='Software'"
+$results           = $updateSearcher.search($criteria)
 $updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
-# Windows Updates To Install Collection
-$updatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
+$updatesToInstall  = New-Object -ComObject Microsoft.Update.UpdateColl
 #endregion Variables
 
 #region Main
@@ -67,12 +65,6 @@ $updatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
 if ($results.Updates.Count -eq 0) {
     Write-Host "No updates found" -ForegroundColor Green
     exit 0
-}else {
-    foreach ($update in $results.Updates){
-        # Add to collection
-        $updatesToDownload.Add($update)
-        $atLeastOneAdded   = $true
-    }
 }
 
 # Filter updates
@@ -80,52 +72,61 @@ for ($i = 0; $i -lt $results.Updates.Count; $i++){
     $update = $results.Updates.Item($i)
     $description = Get-UpdateDescription -Update $update
     if ($update.IsHidden -ne $true) {
-        $updatesToDownload.Add($update)
+        $updatesToDownload.Add($update) | Out-Null
     }else {
         Write-Host "[SKIPPING HIDDEN UPDATE] $description"
     }
 }
 
-# Download Updates
-Write-Host "Downloading updates..."
-$updateDownloader = $updateSession.CreateUpdateDownloader()
-$updateDownloader.Updates = $updatesToDownload
-$updateDownloader.Download()
-Write-Host "Finished downloading updates"
+if ($NoDownload) {
+    Write-Host "Skipping downloads"
+}else{
+    # Download Updates
+    Write-Host "Downloading updates..."
+    $updateDownloader = $updateSession.CreateUpdateDownloader()
+    $updateDownloader.Updates = $updatesToDownload
+    $updateDownloader.Download()
+    Write-Host "Finished downloading updates"
 
-# Get downloaded updates
-for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
-    $update = $updatesToDownload.Item($i)
-    $description = Get-UpdateDescription -Update $update
-    if ($update.IsDownloaded -eq $true) {
-        Write-Host "[DOWNLOADED ] $description"
-        $updatesToInstall.Add($update)
+    # Get downloaded updates
+    for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
+        $update = $updatesToDownload.Item($i)
+        $description = Get-UpdateDescription -Update $update
+        if ($update.IsDownloaded -eq $true) {
+            Write-Host "[DOWNLOADED ] $description"
+            $updatesToInstall.Add($update) | Out-Null
+        }
     }
 }
 
-# Install Updates
-if ($updatesToInstall -gt 0) {
-    $updateInstaller = $updateSession.CreateUpdateInstaller()
-    $updateInstaller.Updates = $updatesToInstall
-    $installResults = $updateInstaller.Install()
-    
-    # Results
-    Write-Host "Install results: $(Get-WindowsUpdateInstallResults -Result $installResults.ResultCode)"
-    Write-Host "Reboot required: $($installResults.RebootRequired)"
-    for ($i = 0; $i -lt $updatesToInstall.Count; $i++) {
-        $message = @"
+if ($NoInstall) {
+    Write-Host "Skipping installs"
+}else {
+    # Install Updates
+    if ($updatesToInstall -gt 0) {
+        $updateInstaller = $updateSession.CreateUpdateInstaller()
+        $updateInstaller.Updates = $updatesToInstall
+        $installResults = $updateInstaller.Install()
+        
+        # Results
+        Write-Host "Install results: $(Get-WindowsUpdateInstallResults -Result $installResults.ResultCode)"
+        Write-Host "Reboot required: $($installResults.RebootRequired)"
+        for ($i = 0; $i -lt $updatesToInstall.Count; $i++) {
+            $message = @"
 $(Get-UpdateDescription -Update $updatesToInstall.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
 "@
-        Write-Event $message
-        if ($installResults.GetUpdateResult($i).HResult -eq -2145116147) {
-            Write-Host "An update needed additional downloaded content. Re-run this script"
+            Write-Event $message
+            if ($installResults.GetUpdateResult($i).HResult -eq -2145116147) {
+                Write-Host "An update needed additional downloaded content. Re-run this script"
+            }
         }
     }
 }
 
 # Check Reboot Required
-if ($installResults.RebootRequired) {
-    <# Action to perform if the condition is true #>
+if ($Reboot -and $installResults.RebootRequired) {
+    Write-Host "Rebooting in 30 seconds..."
+    shutdown.exe /r /t 30
 }
 
 #endregion Main

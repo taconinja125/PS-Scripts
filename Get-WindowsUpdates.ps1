@@ -9,6 +9,14 @@
     https://learn.microsoft.com/en-us/windows/win32/wua_sdk/using-the-windows-update-agent-api
 #>
 
+[CmdletBinding()]
+param (
+    [switch]$NoDownload,
+    [switch]$NoInstall,
+    [switch]$ShowDetails,
+    [bool]$Reboot
+)
+
 #region Functions
 Function Get-WindowsUpdateInstallResults {
     param(
@@ -58,6 +66,7 @@ $updatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
 # Check update count
 if ($results.Updates.Count -eq 0) {
     Write-Host "No updates found" -ForegroundColor Green
+    exit 0
 }else {
     foreach ($update in $results.Updates){
         # Add to collection

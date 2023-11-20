@@ -11,6 +11,7 @@
 
 [CmdletBinding()]
 param (
+    [switch]$IncludeOptionalUpdates,
     [switch]$NoDownload,
     [switch]$NoInstall,
     [switch]$ShowDetails,
@@ -18,6 +19,22 @@ param (
 )
 
 #region Functions
+Function Get-WindowsUpdateDownloadResults{
+    param(
+        [Parameter(Mandatory=$true)]
+        [Int]$Result
+    )
+
+    switch ($Result) {
+        2 { $resultText = "Download succeeded" }
+        3 { $resultText = "Download succeeded with errors" }
+        4 { $resultText = "Download Failed" }
+        5 { $resultText = "Download Cancelled" }
+        Default { $resultText = "Unexpected ($Result)"}
+    }
+
+    return $resultText
+}
 Function Get-WindowsUpdateInstallResults {
     param(
         [Parameter(Mandatory=$true,Position=0)]
@@ -64,8 +81,12 @@ $log               = "C:\Windows\Logs\ECS\WindowsUpdates.log"
 $logPathTest       = Test-Path -Path $(Split-Path -Path $log)
 $updateSession     = New-Object -ComObject Microsoft.Update.Session
 $updateSearcher    = $updateSession.CreateUpdateSearcher()
-$criteria          = "IsInstalled=0 and RebootRequired=0 and Type='Software'"
-$results           = $updateSearcher.search($criteria)
+if ($IncludeOptionalUpdates) {
+    $criteria      = "IsInstalled=0 and RebootRequired=0 and Type='Software'"
+}else {
+    $criteria      = "IsInstalled=0 and RebootRequired=0 and Type='Software' and BrowseOnly=0"
+}
+$results           = $updateSearcher.search($criteria).Updates
 $updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
 $updatesToInstall  = New-Object -ComObject Microsoft.Update.UpdateColl
 #endregion Variables
@@ -88,6 +109,11 @@ if ($results.Updates.Count -eq 0) {
     exit 0
 }
 
+# Print available updates
+foreach ($item in $results){
+    Write-Host "Available update: $(Get-UpdateDescription -Update $item)"
+}
+
 # Filter updates
 for ($i = 0; $i -lt $results.Updates.Count; $i++){
     $update = $results.Updates.Item($i)
@@ -106,8 +132,11 @@ if ($NoDownload) {
     Write-Host "Downloading updates..."
     $updateDownloader = $updateSession.CreateUpdateDownloader()
     $updateDownloader.Updates = $updatesToDownload
-    $updateDownloader.Download()
+    $downloadResults = $updateDownloader.Download()
     Write-Host "Finished downloading updates"
+
+    # Get download result
+    Write-Host "Download results: $(Get-WindowsUpdateDownloadResults -Result $downloadResults.ResultCode)"
 
     # Get downloaded updates
     for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
@@ -146,8 +175,11 @@ $(Get-UpdateDescription -Update $updatesToInstall.Item($i)): $(Get-WindowsUpdate
 
 # Check Reboot Required
 if ($Reboot -and $installResults.RebootRequired) {
-    Write-Host "Rebooting in 30 seconds..."
-    shutdown.exe /r /t 30
+    Write-Host "Rebooting in 30 seconds to finish updates..."
+    Restart-Computer -Timeout 3600 -Delay 30
+}elseif (!$Reboot -and $installResults.RebootRequired) {
+    Write-Host "Reboot required to finish updates"
+}elseif (!$installResults.RebootRequired) {
+    Write-Host "No reboot required"
 }
-
 #endregion Main

@@ -48,10 +48,20 @@ Function Get-UpdateDescription {
 
     return $description
 }
+Function Write-Log
+{
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        $File
+    )
+    Add-Content -Value "$(Get-Date -Format u) -- $Message" -Path $backupLogFile -PassThru
+}
 #endregion Functions
 
 #region Variables
-# Windows Updates search object and results
+$log               = "C:\Windows\Logs\ECS\WindowsUpdates.log"
+$logPathTest       = Test-Path -Path $(Split-Path -Path $log)
 $updateSession     = New-Object -ComObject Microsoft.Update.Session
 $updateSearcher    = $updateSession.CreateUpdateSearcher()
 $criteria          = "IsInstalled=0 and RebootRequired=0 and Type='Software'"
@@ -59,6 +69,17 @@ $results           = $updateSearcher.search($criteria)
 $updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
 $updatesToInstall  = New-Object -ComObject Microsoft.Update.UpdateColl
 #endregion Variables
+
+#region Pre-reqs
+# Event source
+if (!([System.Diagnostics.EventLog]::SourceExists("ECS Patching"))) {
+    New-EventLog -LogName "Application" -Source "ECS Patching"
+}
+
+# Log file test
+if (!$logPathTest) {
+    New-Item -Path $(Split-Path -Path $log) -ItemType Directory
+}
 
 #region Main
 # Check update count

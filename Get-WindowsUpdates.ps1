@@ -99,6 +99,7 @@ $rebootDelay       = 30
 if (!$logPathTest) {
     New-Item -Path $(Split-Path -Path $log) -ItemType Directory | Out-Null
 }
+#endregion Pre-reqs
 
 #region Main
 # Check update count

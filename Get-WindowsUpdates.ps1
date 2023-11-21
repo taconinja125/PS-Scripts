@@ -14,10 +14,28 @@ param (
     [switch]$IncludeOptionalUpdates,
     [switch]$NoDownload,
     [switch]$NoInstall,
+    [switch]$ShowDetails,
     [bool]$Reboot
 )
 
 #region Functions
+Function Get-WindowsUpdateDeploymentActionToText {
+    param(
+        [Parameter(Mandatory=$true)]
+        [Int]$Action
+    )
+
+    switch ($Action) {
+        0 { $DeploymentAction = "None (Inherit)" }
+        1 { $DeploymentAction = "Installation" }
+        2 { $DeploymentAction = "Uninstallation" }
+        3 { $DeploymentAction = "Detection" }
+        4 { $DeploymentAction = "Optional Installation" }
+        Default { $DeploymentAction = "Unexpected ($Action)" }
+    }
+
+    $DeploymentAction
+}
 Function Get-WindowsUpdateDownloadResults{
     param(
         [Parameter(Mandatory=$true)]
@@ -50,7 +68,7 @@ Function Get-WindowsUpdateInstallResults {
 
     return $resultText
 }
-Function Get-UpdateDescription {
+Function Get-WindowsUpdateDescription {
     param(
         [Parameter(Mandatory=$true,Position=0)]
         $Update
@@ -74,6 +92,54 @@ Function Write-Log {
         $File
     )
     Add-Content -Value "$(Get-Date -Format u) -- [$EventType ] $Message" -Path $File -PassThru
+}
+Function Show-WindowsUpdateDetails {
+    param(
+        [Parameter(Mandatory=$true,Position=0)]
+        $Update
+    )
+
+    BEGIN{
+        $kbArticles = @()
+        $updateCategories = @{}
+    }
+    
+    PROCESS{
+        $updateTitle  = $Update.Title
+        $updateDescription = $Update.Description
+        $updateID     = "$($Update.Identity.UpdateID).$($Update.Identity.RevisionNumber)"
+        $updateHidden = $Update.IsHidden
+        $updateDeploymentAction = Get-WindowsUpdateDeploymentActionToText -Action $Update.DeploymentAction
+
+        # KB Article IDs
+        if ($Update.KBArticleIDs.Count -gt 0) {
+            for ($i = 0; $i -lt $Update.KBArticleIDs.Count; $i++) {
+                $kbArticles += $Update.KBArticleIDs.Item($i)
+            }
+        }
+
+        # Update Categories
+        if ($Update.Categories.Count -gt 0) {
+            for ($i = 0; $i -lt $Update.Categories.Count; $i++) {
+                $category = $Update.Categories.Item($i)
+                $updateCategories.Add($category.Name, $category.CategoryID)
+            }
+        }
+
+        $outObj = @{
+            Title            = $updateTitle
+            Description      = $updateDescription
+            ID               = $updateID
+            Hidden           = $updateHidden
+            DeploymentAction = $updateDeploymentAction
+            KBArticleIds     = $kbArticles
+            Categories       = $updateCategories
+        }
+    }
+
+    END{
+        $outObj
+    }
 }
 #endregion Functions
 
@@ -110,13 +176,17 @@ if ($results.Count -eq 0) {
 
 # Print available updates
 foreach ($item in $results){
-    Write-Log -Message "Available update: $(Get-UpdateDescription -Update $item)" -EventType INFO -File $log
+    if ($ShowDetails) {
+        Show-WindowsUpdateDetails -Update $item
+    }else {
+        Write-Log -Message "Available update: $(Get-WindowsUpdateDescription -Update $item)" -EventType INFO -File $log
+    }
 }
 
 # Filter updates
 for ($i = 0; $i -lt $results.Count; $i++){
     $update = $results.Item($i)
-    $description = Get-UpdateDescription -Update $update
+    $description = Get-WindowsUpdateDescription -Update $update
     if ($update.IsHidden -ne $true) {
         Write-Log -Message "Adding to download collection: $($update.Title)" -EventType INFO -File $log
         $updatesToDownload.Add($update) | Out-Null
@@ -162,7 +232,7 @@ if ($NoInstall) {
         Write-Log -Message "Reboot required: $($installResults.RebootRequired)" -EventType INFO -File $log
         for ($i = 0; $i -lt $updatesToDownload.Count; $i++) {
             $message = @"
-$(Get-UpdateDescription -Update $updatesToDownload.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
+$(Get-WindowsUpdateDescription -Update $updatesToDownload.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
 "@
             Write-Log -Message $message -EventType INFO -File $log
             if ($installResults.GetUpdateResult($i).HResult -eq -2145116147) {

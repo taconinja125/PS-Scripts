@@ -218,7 +218,7 @@ if ($NoDownload) {
     # }
 }
 
-if ($NoInstall) {
+if ($NoDownload -or $NoInstall) {
     Write-Log -Message "Skipping installs" -EventType INFO -File $log
 }else {
     # Install Updates

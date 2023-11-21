@@ -99,12 +99,12 @@ if (!([System.Diagnostics.EventLog]::SourceExists("ECS Patching"))) {
 
 # Log file test
 if (!$logPathTest) {
-    New-Item -Path $(Split-Path -Path $log) -ItemType Directory
+    New-Item -Path $(Split-Path -Path $log) -ItemType Directory | Out-Null
 }
 
 #region Main
 # Check update count
-if ($results.Updates.Count -eq 0) {
+if ($results.Count -eq 0) {
     Write-Host "No updates found" -ForegroundColor Green
     exit 0
 }
@@ -115,8 +115,8 @@ foreach ($item in $results){
 }
 
 # Filter updates
-for ($i = 0; $i -lt $results.Updates.Count; $i++){
-    $update = $results.Updates.Item($i)
+for ($i = 0; $i -lt $results.Count; $i++){
+    $update = $results.Item($i)
     $description = Get-UpdateDescription -Update $update
     if ($update.IsHidden -ne $true) {
         $updatesToDownload.Add($update) | Out-Null
@@ -153,7 +153,7 @@ if ($NoInstall) {
     Write-Host "Skipping installs"
 }else {
     # Install Updates
-    if ($updatesToInstall -gt 0) {
+    if ($updatesToInstall.Count -gt 0) {
         $updateInstaller = $updateSession.CreateUpdateInstaller()
         $updateInstaller.Updates = $updatesToInstall
         $installResults = $updateInstaller.Install()
@@ -165,7 +165,7 @@ if ($NoInstall) {
             $message = @"
 $(Get-UpdateDescription -Update $updatesToInstall.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
 "@
-            Write-Event $message
+            Write-Host $message
             if ($installResults.GetUpdateResult($i).HResult -eq -2145116147) {
                 Write-Host "An update needed additional downloaded content. Re-run this script"
             }

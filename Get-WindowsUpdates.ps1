@@ -14,7 +14,6 @@ param (
     [switch]$IncludeOptionalUpdates,
     [switch]$NoDownload,
     [switch]$NoInstall,
-    [switch]$ShowDetails,
     [bool]$Reboot
 )
 
@@ -30,7 +29,7 @@ Function Get-WindowsUpdateDownloadResults{
         3 { $resultText = "Download succeeded with errors" }
         4 { $resultText = "Download Failed" }
         5 { $resultText = "Download Cancelled" }
-        Default { $resultText = "Unexpected ($Result)"}
+        Default { $resultText = "Unexpected download return code ($Result)"}
     }
 
     return $resultText
@@ -42,11 +41,11 @@ Function Get-WindowsUpdateInstallResults {
     )
 
     switch ($Result) {
-        2 { $resultText = "Succeeded" }
-        3 { $resultText = "Succeeded with errors" }
-        4 { $resultText = "Failed" }
-        5 { $resultText = "Cancelled" }
-        Default { $resultText = "Unexpected ($Result)"}
+        2 { $resultText = "Install succeeded" }
+        3 { $resultText = "Install succeeded with errors" }
+        4 { $resultText = "Install failed" }
+        5 { $resultText = "Install Cancelled" }
+        Default { $resultText = "Unexpected install return code ($Result)"}
     }
 
     return $resultText
@@ -65,14 +64,16 @@ Function Get-UpdateDescription {
 
     return $description
 }
-Function Write-Log
-{
+Function Write-Log {
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$true,Position=0)]
         [string]$Message,
+        [Parameter(Mandatory=$true,Position=1)]
+        [ValidateSet("INFO","WARNING","ERROR")]
+        [string]$EventType,
         $File
     )
-    Add-Content -Value "$(Get-Date -Format u) -- $Message" -Path $backupLogFile -PassThru
+    Add-Content -Value "$(Get-Date -Format u) -- [$EventType ] $Message" -Path $File -PassThru
 }
 #endregion Functions
 
@@ -89,14 +90,11 @@ if ($IncludeOptionalUpdates) {
 $results           = $updateSearcher.search($criteria).Updates
 $updatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
 $updatesToInstall  = New-Object -ComObject Microsoft.Update.UpdateColl
+$rebootTimeOut     = 3600
+$rebootDelay       = 30
 #endregion Variables
 
 #region Pre-reqs
-# Event source
-if (!([System.Diagnostics.EventLog]::SourceExists("ECS Patching"))) {
-    New-EventLog -LogName "Application" -Source "ECS Patching"
-}
-
 # Log file test
 if (!$logPathTest) {
     New-Item -Path $(Split-Path -Path $log) -ItemType Directory | Out-Null
@@ -105,13 +103,13 @@ if (!$logPathTest) {
 #region Main
 # Check update count
 if ($results.Count -eq 0) {
-    Write-Host "No updates found" -ForegroundColor Green
+    Write-Log -Message "No updates found" -EventType INFO -File $log
     exit 0
 }
 
 # Print available updates
 foreach ($item in $results){
-    Write-Host "Available update: $(Get-UpdateDescription -Update $item)"
+    Write-Log -Message "Available update: $(Get-UpdateDescription -Update $item)" -EventType INFO -File $log
 }
 
 # Filter updates
@@ -119,55 +117,55 @@ for ($i = 0; $i -lt $results.Count; $i++){
     $update = $results.Item($i)
     $description = Get-UpdateDescription -Update $update
     if ($update.IsHidden -ne $true) {
+        Write-Log -Message "Adding to download collection: $($update.Title)" -EventType INFO -File $log
         $updatesToDownload.Add($update) | Out-Null
     }else {
-        Write-Host "[SKIPPING HIDDEN UPDATE] $description"
+        Write-Log -Message "Skipping hidden update: $($update.Title)" -EventType INFO -File $log
     }
 }
 
 if ($NoDownload) {
-    Write-Host "Skipping downloads"
+    Write-Log -Message "Skipping downloads" -EventType INFO -File $log
 }else{
     # Download Updates
-    Write-Host "Downloading updates..."
+    Write-Log -Message "Beginning download" -EventType INFO -File $log
     $updateDownloader = $updateSession.CreateUpdateDownloader()
     $updateDownloader.Updates = $updatesToDownload
     $downloadResults = $updateDownloader.Download()
-    Write-Host "Finished downloading updates"
 
     # Get download result
-    Write-Host "Download results: $(Get-WindowsUpdateDownloadResults -Result $downloadResults.ResultCode)"
+    Write-Log -Message "Download run results: $(Get-WindowsUpdateDownloadResults -Result $downloadResults.ResultCode)" -EventType INFO -File $log
 
-    # Get downloaded updates
-    for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
-        $update = $updatesToDownload.Item($i)
-        $description = Get-UpdateDescription -Update $update
-        if ($update.IsDownloaded -eq $true) {
-            Write-Host "[DOWNLOADED ] $description"
-            $updatesToInstall.Add($update) | Out-Null
-        }
-    }
+    # # Get downloaded updates
+    # for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
+    #     $update = $updatesToDownload.Item($i)
+    #     $description = Get-UpdateDescription -Update $update
+    #     if ($update.IsDownloaded -eq $true) {
+    #         Write-Host "[DOWNLOADED ] $description"
+    #         $updatesToInstall.Add($update) | Out-Null
+    #     }
+    # }
 }
 
 if ($NoInstall) {
-    Write-Host "Skipping installs"
+    Write-Log -Message "Skipping installs" -EventType INFO -File $log
 }else {
     # Install Updates
-    if ($updatesToInstall.Count -gt 0) {
+    if ($updatesToDownload.Count -gt 0) {
         $updateInstaller = $updateSession.CreateUpdateInstaller()
-        $updateInstaller.Updates = $updatesToInstall
+        $updateInstaller.Updates = $updatesToDownload
         $installResults = $updateInstaller.Install()
         
         # Results
-        Write-Host "Install results: $(Get-WindowsUpdateInstallResults -Result $installResults.ResultCode)"
-        Write-Host "Reboot required: $($installResults.RebootRequired)"
-        for ($i = 0; $i -lt $updatesToInstall.Count; $i++) {
+        Write-Log -Message "Install results: $(Get-WindowsUpdateInstallResults -Result $installResults.ResultCode)" -EventType INFO -File $log
+        Write-Log -Message "Reboot required: $($installResults.RebootRequired)" -EventType INFO -File $log
+        for ($i = 0; $i -lt $updatesToDownload.Count; $i++) {
             $message = @"
-$(Get-UpdateDescription -Update $updatesToInstall.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
+$(Get-UpdateDescription -Update $updatesToDownload.Item($i)): $(Get-WindowsUpdateInstallResults -Result $installResults.GetUpdateResult($i).ResultCode) HRESULT: $($installResults.GetUpdateResult($i).HResult)
 "@
-            Write-Host $message
+            Write-Log -Message $message -EventType INFO -File $log
             if ($installResults.GetUpdateResult($i).HResult -eq -2145116147) {
-                Write-Host "An update needed additional downloaded content. Re-run this script"
+                Write-Log -Message "An update needed additional downloaded content. Re-run this script or complete in Windows Update menu." -EventType WARNING -File $log
             }
         }
     }
@@ -175,11 +173,11 @@ $(Get-UpdateDescription -Update $updatesToInstall.Item($i)): $(Get-WindowsUpdate
 
 # Check Reboot Required
 if ($Reboot -and $installResults.RebootRequired) {
-    Write-Host "Rebooting in 30 seconds to finish updates..."
-    Restart-Computer -Timeout 3600 -Delay 30
+    Write-Log -Message "Rebooting in [$rebootDelay] seconds to finish updates..." -EventType INFO -File $log
+    Restart-Computer -Timeout $rebootTimeOut -Delay $rebootDelay
 }elseif (!$Reboot -and $installResults.RebootRequired) {
-    Write-Host "Reboot required to finish updates"
+    Write-Log -Message "Reboot required to finish updates" -EventType INFO -File $log
 }elseif (!$installResults.RebootRequired) {
-    Write-Host "No reboot required"
+    Write-Log -Message "No reboot required" -EventType INFO -File $log
 }
 #endregion Main

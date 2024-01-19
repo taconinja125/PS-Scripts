@@ -208,12 +208,15 @@ if ($NoDownload) {
     Write-Log -Message "Download run results: $(Get-WindowsUpdateDownloadResults -Result $downloadResults.ResultCode)" -EventType INFO -File $log
 
     # # Get downloaded updates
-    # for ($i = 0; $i -lt $updatesToDownload.Count; $i++){
-    #     $update = $updatesToDownload.Item($i)
-    #     $description = Get-UpdateDescription -Update $update
+    # $results = $updateSearcher.search($criteria).Updates
+    # for ($i = 0; $i -lt $results.Count; $i++){
+    #     $update = $results.Item($i)
     #     if ($update.IsDownloaded -eq $true) {
-    #         Write-Host "[DOWNLOADED ] $description"
+    #         Write-Log -Message "Downloaded: $($update.Title)" -EventType INFO -File $log
+    #         Write-Host "[DOWNLOADED ] $($update.Title)"
     #         $updatesToInstall.Add($update) | Out-Null
+    #     }else {
+    #         Write-Log -Message "Now downloaded: $($update.Title)" -EventType WARNING -File $log
     #     }
     # }
 }

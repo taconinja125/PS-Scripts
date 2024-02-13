@@ -100,9 +100,9 @@ else {
     ForEach-Object {
         $parts = $_ -split " "
         [PSCustomObject]@{
-            Description  = "Interface"
-            IPAddress    = $parts[1]
-            IPSubnet     = $parts[3]
+            Description = "Interface"
+            IPAddress   = $parts[1]
+            IPSubnet    = $parts[3]
         }
     }
 }

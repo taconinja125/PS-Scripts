@@ -1,3 +1,4 @@
+#!/usr/local/bin/pwsh
 <#
 .SYNOPSIS
 Generate a basic system report in PowerShell 7 for macOS and Windows
@@ -18,15 +19,13 @@ param(
 )
 
 #region System info
-$osPlatform = if ($IsWindows) { "Windows" } else { "macOS" }
-
-# Collect system information
 $systemInfo = @{
-    OSPlatform  = $osPlatform
-    OSVersion   = [System.Environment]::OSVersion.Version.ToString()
-    MachineName = if ($IsWindows) {$env:COMPUTERNAME} else {/bin/hostname -s}
-    CPU         = if ($IsWindows) { (Get-WmiObject -Class Win32_Processor).Name } else { sysctl -n machdep.cpu.brand_string }
-    RAM         = if ($IsWindows) {"{0} GB" -f ((Get-WmiObject -Class Win32_ComputerSystem).TotalPhysicalMemory / 1GB -as [int]) } else { "{0} GB" -f ((system_profiler SPHardwareDataType | grep "Memory:" | Out-String).Split(":").Trim()[1] -replace " GB", "") }
+    OSPlatform   = ($IsWindows) ? "Windows" : "macOS"
+    OSVersion    = [System.Environment]::OSVersion.Version.ToString()
+    MachineName  = ($IsWindows) ? $env:COMPUTERNAME : (/bin/hostname -s)
+    SerialNumber = ($IsWindows) ? (Get-CimInstance -ClassName Win32_BIOS).SerialNumber : ((ioreg -l | grep IOPlatformSerialNumber).split(' ')[-1].trim('"'))
+    CPU          = ($IsWindows) ? (Get-WmiObject -Class Win32_Processor).Name : (sysctl -n machdep.cpu.brand_string)
+    RAM          = ($IsWindows) ? ("{0} GB" -f ((Get-WmiObject -Class Win32_ComputerSystem).TotalPhysicalMemory / 1GB -as [int])) : ("{0} GB" -f ((system_profiler SPHardwareDataType | grep "Memory:" | Out-String).Split(":").Trim()[1] -replace " GB", ""))
 }
 #endregion System info
 
@@ -36,9 +35,17 @@ if ($IsWindows) {
     Where-Object { $_.DisplayName -ne $null } | 
     Select-Object -Property DisplayName, DisplayVersion, Publisher
 }else {
-    $installedApps = system_profiler SPApplicationsDataType | 
-    Select-String "Location: /Applications/", "Version:" -Context 0, 1 | 
-    ForEach-Object { $_.Context.DisplayPostContext[0] + " " + $_.Line }
+    $installedApps = Get-ChildItem -Path /Applications,/Applications/Utilitles -Filter *.app -Depth 1 | Foreach-Object {
+        if (Test-Path -path $(Join-Path -Path $_.FullName -ChildPath /Contents/Info.plist)) {
+            $identifier = /usr/bin/defaults read $(Join-Path -Path $_.FullName -ChildPath /Contents/Info.plist) CFBundleIdentifier
+            $version = /usr/bin/defaults read $(Join-Path -Path $_.FullName -ChildPath /Contents/Info.plist) CFBundleShortVersionString
+            [PSCustomObject]@{
+                Name = $_.BaseName
+                Identifier  = $identifier
+                Version     = $version
+            }
+        }
+    }
 }
 #endregion Installed apps
 
@@ -59,7 +66,7 @@ if ($IsWindows) {
         }
     }
 } else {
-    $diskEncryption = fdesetup status | Out-String
+    $diskEncryption = (fdesetup status | Out-String).trim()
 }
 #endregion Disk encryption
 
@@ -70,7 +77,7 @@ if ($IsWindows) {
     Select-Object Description, IPAddress, IPSubnet, DefaultIPGateway
 }
 else {
-    $networkInfo = "/sbin/ifconfig" | 
+    $networkInfo = /sbin/ifconfig | 
     ForEach-Object { $_ -split "\n" } | 
     Where-Object { $_ -match "inet " } | 
     ForEach-Object {
@@ -79,7 +86,6 @@ else {
             Description      = "Interface"
             IPAddress        = $parts[1]
             IPSubnet         = $parts[3]
-            DefaultIPGateway = "N/A"
         }
     }
 }
@@ -88,10 +94,10 @@ else {
 #region Bring it all together
 $inventoryReport = @{
     SystemInformation = $systemInfo
-    InstalledSoftware = $installedApps
     DiskSpace         = $diskSpace
     DiskEncryption    = $diskEncryption
     NetworkInfo       = $networkInfo
+    InstalledSoftware = $installedApps
 }
 $inventoryReportJson = $inventoryReport | ConvertTo-Json -Depth 3
 $inventoryReportJson | Out-File -FilePath $OutFile

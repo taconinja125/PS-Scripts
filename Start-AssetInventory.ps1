@@ -28,9 +28,11 @@ if ($IsWindows) {
         Write-Error "This script must be run with administrative privileges"
         return
     }
-} elseif ($([System.Environment]::UserName) -ne "root") {
+}else{
+    if ($([System.Environment]::UserName) -ne "root") {
         Write-Error "This script must be run as root"
         return
+    }
 }
 
 #region System info
@@ -74,9 +76,9 @@ $diskSpace = Get-PSDrive -PSProvider FileSystem |
 if ($IsWindows) {
     $diskEncryption = Get-BitLockerVolume | ForEach-Object {
         [PSCustomObject]@{
-            Drive = $_.MountPoint
-            EncryptionStatus = $_.VolumeStatus
-            KeyProtector = $_.KeyProtector
+            Drive               = $_.MountPoint
+            EncryptionStatus    = $_.VolumeStatus
+            KeyProtector        = $_.KeyProtector
             'Protection Status' = $_.ProtectionStatus
         }
     }
@@ -98,22 +100,22 @@ else {
     ForEach-Object {
         $parts = $_ -split " "
         [PSCustomObject]@{
-            Description      = "Interface"
-            IPAddress        = $parts[1]
-            IPSubnet         = $parts[3]
+            Description  = "Interface"
+            IPAddress    = $parts[1]
+            IPSubnet     = $parts[3]
         }
     }
 }
 #endregion Network info
 
 #region Bring it all together
-$inventoryReport = @{
+$inventoryObj = @{
     SystemInformation = $systemInfo
     DiskSpace         = $diskSpace
     DiskEncryption    = $diskEncryption
     NetworkInfo       = $networkInfo
     InstalledSoftware = $installedApps
 }
-$inventoryReportJson = $inventoryReport | ConvertTo-Json -Depth 3
-$inventoryReportJson | Out-File -FilePath $OutFile
+$jsonObj = $inventoryObj | ConvertTo-Json -Depth 3
+$jsonObj | Out-File -FilePath $OutFile
 #endregion

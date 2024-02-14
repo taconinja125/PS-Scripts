@@ -118,4 +118,4 @@ $inventoryObj = @{
 }
 $jsonObj = $inventoryObj | ConvertTo-Json -Depth 3
 $jsonObj | Out-File -FilePath $OutFile
-#endregion
+#endregion Bring it all together

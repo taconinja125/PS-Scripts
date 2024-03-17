@@ -15,7 +15,8 @@ param (
     [switch]$NoDownload,
     [switch]$NoInstall,
     [switch]$ShowDetails,
-    [bool]$Reboot
+    [bool]$Reboot,
+    [string]$LogPath = "C:\ECS\WindowsUpdates.log"
 )
 
 #region Functions
@@ -144,7 +145,7 @@ Function Show-WindowsUpdateDetails {
 #endregion Functions
 
 #region Variables
-$log               = "C:\Windows\Logs\ECS\WindowsUpdates.log"
+$log               = "C:\ECS\WindowsUpdates.log"
 $logPathTest       = Test-Path -Path $(Split-Path -Path $log)
 $updateSession     = New-Object -ComObject Microsoft.Update.Session
 $updateSearcher    = $updateSession.CreateUpdateSearcher()
@@ -163,7 +164,7 @@ $rebootDelay       = 30
 #region Pre-reqs
 # Log file test
 if (!$logPathTest) {
-    New-Item -Path $(Split-Path -Path $log) -ItemType Directory | Out-Null
+    New-Item -Path $(Split-Path -Path $log) -ItemType Directory -Force | Out-Null
 }
 #endregion Pre-reqs
 
@@ -207,18 +208,18 @@ if ($NoDownload) {
     # Get download result
     Write-Log -Message "Download run results: $(Get-WindowsUpdateDownloadResults -Result $downloadResults.ResultCode)" -EventType INFO -File $log
 
-    # # Get downloaded updates
-    # $results = $updateSearcher.search($criteria).Updates
-    # for ($i = 0; $i -lt $results.Count; $i++){
-    #     $update = $results.Item($i)
-    #     if ($update.IsDownloaded -eq $true) {
-    #         Write-Log -Message "Downloaded: $($update.Title)" -EventType INFO -File $log
-    #         Write-Host "[DOWNLOADED ] $($update.Title)"
-    #         $updatesToInstall.Add($update) | Out-Null
-    #     }else {
-    #         Write-Log -Message "Now downloaded: $($update.Title)" -EventType WARNING -File $log
-    #     }
-    # }
+    # Get downloaded updates
+    $results = $updateSearcher.search($criteria).Updates
+    for ($i = 0; $i -lt $results.Count; $i++){
+        $update = $results.Item($i)
+        if ($update.IsDownloaded -eq $true) {
+            Write-Log -Message "Downloaded: $($update.Title)" -EventType INFO -File $log
+            Write-Host "[DOWNLOADED ] $($update.Title)"
+            $updatesToInstall.Add($update) | Out-Null
+        }else {
+            Write-Log -Message "Not downloaded: $($update.Title)" -EventType WARNING -File $log
+        }
+    }
 }
 
 if ($NoDownload -or $NoInstall) {

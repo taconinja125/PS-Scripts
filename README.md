@@ -2,6 +2,66 @@
 
 PowerShell scripts I've come up with for various purposes
 
+## Table of Contents
+- [Start-AssetInventory.ps1](#start-assetinventoryps1)
+- [Get-WindowsUpdates.ps1](#get-windowsupdatesps1)
+
+## Start-AssetInventory.ps1
+
+A cross-platform PowerShell 7 script that generates comprehensive system information reports for both macOS and Windows environments. The script creates a JSON report containing detailed system, application, disk, and network information.
+
+### Purpose
+
+This script provides a standardized way to collect system information across different platforms by:
+- Gathering detailed system specifications
+- Inventorying installed applications
+- Collecting disk space and encryption status
+- Documenting network configuration
+- Outputting all data in a structured JSON format
+
+### Key Components
+
+1. **System Information**
+   - OS version and platform detection
+   - Machine name and serial number
+   - CPU specifications
+   - RAM configuration
+
+2. **Application Inventory**
+   - Windows: Registry-based application detection
+   - macOS: Application directory scanning
+   - Version and publisher information
+
+3. **Storage Information**
+   - Disk space usage and availability
+   - Encryption status (BitLocker/FileVault)
+   - Drive mapping details
+
+4. **Network Configuration**
+   - Network adapter information
+   - IP addressing and subnet details
+   - Gateway configuration
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `-OutFile` | String | `~\inventoryReport.json` | Specify the output path for the JSON report |
+
+### Usage Examples
+
+```powershell
+# Generate report with default output location
+Start-AssetInventory.ps1
+
+# Specify custom output location
+Start-AssetInventory.ps1 -OutFile "C:\Reports\inventory.json"
+```
+
+### Requirements
+- PowerShell 7 or later
+- Administrative privileges (Windows) or root access (macOS)
+
 ## Get-WindowsUpdates.ps1
 
 A PowerShell script that automates the Windows Update process using the Windows Update Agent API. This script provides a flexible and programmatic way to search, download, and install Windows updates with detailed logging and error handling.
